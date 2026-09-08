@@ -45,20 +45,25 @@ jobs:
       - name: python files compile
         run: python -m compileall -q cmssw
 
+      # find, not a glob: the gridpack scripts live a directory deeper.  Both
+      # loops collect a status rather than using -exec, which reports find's
+      # exit code and not the checker's, and would pass on a broken script.
       - name: shell scripts parse
         run: |
-          for f in cmssw/*.sh; do
+          status=0
+          while IFS= read -r f; do
             echo "checking $f"
-            bash -n "$f"
-          done
+            bash -n "$f" || status=1
+          done < <(find cmssw -name '*.sh')
+          exit $status
 
       - name: shell scripts are executable
         run: |
           status=0
-          for f in cmssw/*.sh; do
+          while IFS= read -r f; do
             if [ ! -x "$f" ]; then
               echo "$f is not executable" >&2
               status=1
             fi
-          done
+          done < <(find cmssw -name '*.sh')
           exit $status

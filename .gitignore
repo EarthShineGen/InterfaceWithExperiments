@@ -1,6 +1,13 @@
 __pycache__/
 *.pyc
+
+# generator output and cmsRun products
 *.root
 *.hepmc
 *.hepmc3
 *.lhe
+
+# gridpack build artefacts
+gridpack_workdir/
+*.tar.xz
+CMSSW_*/

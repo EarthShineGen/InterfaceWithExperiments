@@ -25,7 +25,47 @@ cmssw/
 
   fragment_mcfilesource.py  the CMSSW fragment for the HepMC route, with the
                             customisation function for a cmsDriver cfg
+
+  gridpack/                 the LHE route: gridpack build and GEN fragments
+    earthshinegen_gridpack.sh          builds the tarball
+    runcmsgrid_earthshinegen_generic.sh   parameter point passed at run time
+    runcmsgrid_earthshinegen_specific.sh  parameter point baked into the card
+    earthshinegen.py                   ExternalLHEProducer snippet
+    run3_fragment.py                   the GEN fragment
 ```
+
+## Two routes into CMSSW
+
+|  | LHE, via a gridpack | HepMC, via MCFileSource |
+|---|---|---|
+| built by | `cmssw/gridpack/earthshinegen_gridpack.sh` | nothing: run the generator |
+| read by | `ExternalLHEProducer` + `Pythia8HadronizerFilter` as a pass-through | `MCFileSource` |
+| vertices | one per event, in comment lines a producer must be written to read | one per muon, natively |
+| fits | central production, McM | driving it yourself |
+
+Use the gridpack when you need the standard production machinery. Use HepMC
+when the two muon entry points matter -- with `ms_model highland` they are
+metres apart, and the single midpoint vertex stops being an approximation to
+anything.
+
+## Building a gridpack
+
+The generator is staged into the tarball from its own repository, so the build
+has to be told where that is:
+
+```bash
+export EARTHSHINEGEN=$HOME/EarthAsDM/EarthShineGen/EarthShineGen
+
+cd cmssw/gridpack
+./earthshinegen_gridpack.sh run3                          # generic
+./earthshinegen_gridpack.sh run3 7000 0.23 1e-8 max core  # specific point
+```
+
+That writes `earthshinegen_gridpack_run3.tar.xz`, containing `runcmsgrid.sh`
+and a flat `EarthShineGen/` tree. Nothing is compiled; the release is set up
+only so the gridpack is built against the python and numpy the job will see.
+A ten-event unit test runs before packing, in both output formats, so a broken
+writer is caught here rather than in the job.
 
 ## Running
 
