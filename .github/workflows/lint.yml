@@ -1,0 +1,64 @@
+name: lint
+
+# Everything in this repository needs CMSSW and cvmfs to do anything, so there
+# is no useful test a GitHub runner can execute: no cmsRun, no MCFileSource, no
+# GEANT4 geometry.  What a runner *can* do is catch a syntax error before
+# someone discovers it thirty seconds into a cmsRun on a batch node.
+#
+# This repository is private, so Actions minutes come out of the account's
+# monthly allowance (2000 minutes on the Free plan).  This job is a few seconds
+# of that per push.  Keep it that way: no matrix, no cron, nothing on
+# documentation-only changes, and in-flight runs cancelled when a new commit
+# lands.  The real testing happens on a machine with cvmfs, via
+# cmssw/run_read_validation.sh and cmssw/run_gensim.sh.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+  pull_request:
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      # The cfgs import FWCore.ParameterSet, which is not installable here, so
+      # they can only be compiled, not imported.  That still catches the errors
+      # a text editor does not.
+      - name: python files compile
+        run: python -m compileall -q cmssw
+
+      - name: shell scripts parse
+        run: |
+          for f in cmssw/*.sh; do
+            echo "checking $f"
+            bash -n "$f"
+          done
+
+      - name: shell scripts are executable
+        run: |
+          status=0
+          for f in cmssw/*.sh; do
+            if [ ! -x "$f" ]; then
+              echo "$f is not executable" >&2
+              status=1
+            fi
+          done
+          exit $status

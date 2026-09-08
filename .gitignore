@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.root
+*.hepmc
+*.hepmc3
+*.lhe
