@@ -85,14 +85,24 @@ mkdir -p /tmp/esg && cd /tmp/esg
 .../InterfaceWithExperiments/cmssw/run_gensim.sh            # GEN-SIM level
 ```
 
-## Why HepMC 2
+## Why these cfgs pin HepMC 2
 
-`MCFileSource` (`IOMC/Input`) is the only file-based generator input source in
-CMSSW, and it opens the file with `HepMC::IO_GenEvent` -- HepMC **2**. A
-release-wide search finds no HepMC3 file reader; HepMC3 appears only inside
-hadronizer interfaces (`Pythia8HepMC3Hadronizer` and friends), `HepMC3Product`
-and Rivet. So `--hepmc_version 2` is what CMSSW reads and what these cfgs
-expect. The generator's HepMC 3 output is for Rivet and everything else.
+The generator defaults to HepMC 3. These cfgs pass `--hepmc_version 2` anyway,
+because they are built around `MCFileSource` (`IOMC/Input`), which opens the
+file with `HepMC::IO_GenEvent` -- HepMC **2** -- and produces `HepMCProduct`.
+
+That is no longer the only option. A local `MCFileSource3` (`HepMC3FileReader`,
+`MCFileSource3`, producing `HepMC3Product` + `GenEventInfoProduct3`) has been
+added to `IOMC/Input` in the work area, and it reads the generator's default
+HepMC 3 output directly -- verified on a 20-event sample.
+`GenParticleProducer` already carries a `HepMC3Product` token, so the read-back
+path could move to HepMC 3 wholesale.
+
+What is *not* there yet is GEN-SIM: nothing in `g4SimHits_cfi.py` takes a
+HepMC3 product, so GEANT still needs HepMC 2. Migrating `read_hepmc_cfg.py`
+and `check_hepmc_roundtrip.py` to `MCFileSource3` is a clean follow-up; until
+someone does it, and until `MCFileSource3` is upstream rather than local, these
+cfgs stay on HepMC 2 so that they work in any release.
 
 ## Three things that are not obvious
 
@@ -115,7 +125,14 @@ included, because the status-based selection is never reached. One cut has to
 stay on. These cfgs keep `ApplyPCuts` and open its window to
 `[0.04, 10^6] GeV` instead.
 
-**3. The generator writes status 3, and it matters.** `Generator.cc` reads
+**3. The A' has no production vertex.** The generator does not model the A'
+flight -- it samples the decay point directly -- so writing a production vertex
+would mean putting it at the decay point and giving the A' a zero-length flight
+path. It is written as an incoming particle of its own decay vertex instead.
+Do not read `|V_prod - V_dec|` as a measured flight distance; there is no such
+vertex to measure against.
+
+**4. The generator writes status 3, and it matters.** `Generator.cc` reads
 
 | status | meaning |
 |---|---|

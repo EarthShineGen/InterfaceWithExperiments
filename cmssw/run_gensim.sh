@@ -40,7 +40,8 @@ fi
 
 python3 "${GEN}" \
     --n_events "${N_EVENTS}" --seed 20260907 \
-    --output_format hepmc --hepmc_file ev.hepmc --report_file '' \
+    --output_format hepmc --hepmc_version 2 --hepmc_file ev.hepmc \
+    --report_file '' \
     --require_hit inner_detector --require_both_muons 1 \
     --detector_half_length 11 --max_trials 4000000
 

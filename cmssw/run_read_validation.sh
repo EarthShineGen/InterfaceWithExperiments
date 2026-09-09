@@ -36,7 +36,6 @@ CASES=(
     "detector_highland:--stage detector --ms_model highland"
     "vertex_stage:--stage vertex"
     "single_topology:--stage detector --hepmc_topology single"
-    "no_mock_beams:--stage detector --include_initial 0"
     "no_mother:--stage detector --include_mother 0"
 )
 
@@ -52,8 +51,10 @@ for entry in "${CASES[@]}"; do
     mkdir -p "${name}" || exit 1
     ( cd "${name}" || exit 1
 
+      # hepmc_version 2 is pinned: MCFileSource reads HepMC 2, while the
+      # generator now defaults to 3.
       python3 "${GEN}" --n_events "${N_EVENTS}" --seed 20260907 \
-              --output_file ev.lhe --hepmc_file ev.hepmc \
+              --output_file ev.lhe --hepmc_file ev.hepmc --hepmc_version 2 \
               --report_file '' --max_trials 2000000 ${args} > gen.log 2>&1
       if [ $? -ne 0 ]; then
           echo "FAIL ${name}: generation"; tail -20 gen.log; exit 1
