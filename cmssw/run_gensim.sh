@@ -17,7 +17,13 @@
 # the detector, so this asks for both muons to point at the inner cylinder, and
 # shortens the hand-off surface from the generic 15 m half length to 11 m,
 # beyond which there is no CMS left to hit.  With those settings 20 out of 20
-# events leave hits in the muon system and 18 of 20 in the tracker.
+# events leave hits in the muon system and 18 of 20 in the tracker.  That first
+# number is sample dependent -- seed 20260909 gives 17 of 20 -- because
+# reaching the inner cylinder does not guarantee reaching a muon station.
+#
+# This script stays on HepMC 2 so that it runs in any release.  For the
+# generator's native HepMC 3, and for the steps after GEN-SIM, use run_chain.sh
+# in a release that has MCFileSource3 (cms-sw/cmssw#51842).
 #
 set -eu
 

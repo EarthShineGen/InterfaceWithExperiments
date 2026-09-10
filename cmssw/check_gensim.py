@@ -41,7 +41,70 @@ TRACKER_HIT_LABELS = ('TrackerHitsTIBLowTof', 'TrackerHitsTOBLowTof',
 
 
 def parse_final_muons(path):
-    """Per event: {pdg: production vertex in mm} for the status-1 particles."""
+    """Per event: {pdg: production vertex in mm} for the status-1 particles.
+
+    Reads either HepMC version.  Which one it is is decided by the listing
+    marker, not by the `HepMC::Version` line above it: that line carries the
+    version of the *library* that wrote the file, so a HepMC 2 file written by
+    HepMC3's WriterAsciiHepMC2 announces itself as version 3.03.01.  Both are
+    written in mm by the generator.
+    """
+    with open(path) as fh:
+        for _ in range(5):
+            line = fh.readline()
+            if not line:
+                break
+            if line.startswith('HepMC::Asciiv3-START_EVENT_LISTING'):
+                return parse_final_muons_v3(path)
+            if line.startswith('HepMC::IO_GenEvent-START_EVENT_LISTING'):
+                return parse_final_muons_v2(path)
+    raise SystemExit('%s: no HepMC event listing in the first lines' % path)
+
+
+def parse_final_muons_v3(path):
+    """parse_final_muons for the HepMC 3 ASCII format.
+
+    A particle line carries the id of its production vertex, so unlike in
+    HepMC 2 there is no incoming/outgoing bookkeeping to do:
+
+        V -2 0 [3] @ <x> <y> <z> <t>
+        P 4 -2 13 <px> <py> <pz> <e> <m> <status>
+    """
+    events = []
+    current = None
+    vertices = {}
+    listing = False
+
+    with open(path) as fh:
+        for raw in fh:
+            line = raw.rstrip('\n')
+            if line.startswith('HepMC::Asciiv3-START_EVENT_LISTING'):
+                listing = True
+                continue
+            if line.startswith('HepMC::Asciiv3-END_EVENT_LISTING'):
+                break
+            if not listing or not line:
+                continue
+
+            tag, rest = line[0], line[2:].split()
+            if tag == 'E':
+                current = {}
+                vertices = {}
+                events.append(current)
+            elif tag == 'V':
+                # the position is only written if the vertex has one
+                if '@' in rest:
+                    at = rest.index('@')
+                    vertices[int(rest[0])] = tuple(
+                        float(v) for v in rest[at + 1:at + 4])
+            elif tag == 'P':
+                if int(rest[8]) == 1:
+                    current[int(rest[2])] = vertices[int(rest[1])]
+    return events
+
+
+def parse_final_muons_v2(path):
+    """parse_final_muons for the HepMC 2 ASCII format."""
     events = []
     current = None
     vertices = {}
@@ -138,9 +201,14 @@ def main(hepmc_path, root_path):
 
     if n_events == 0:
         failures.append('no events in the GEN-SIM file')
-    if n_with_muon_hits < n_events:
-        failures.append('%d of %d events left no hit in the muon system'
-                        % (n_events - n_with_muon_hits, n_events))
+    # Not every event has to reach the chambers: with --require_hit
+    # inner_detector a muon may cross the inner cylinder and still stop or exit
+    # before any muon station.  Seed 20260907 gave 20 of 20, seed 20260909 gave
+    # 17 of 20 -- and identically so from HepMC 2 and HepMC 3 -- so this is a
+    # property of the sample, not of the reading path.  Only an empty sample is
+    # a failure; the rate is printed either way.
+    if n_with_muon_hits == 0:
+        failures.append('no event left a hit in the muon system')
     if n_with_tracker_hits == 0:
         failures.append('no event left a tracker hit; the muons did not '
                         'reach the middle of the detector')

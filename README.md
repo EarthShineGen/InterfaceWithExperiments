@@ -14,14 +14,20 @@ adding another does not disturb this one.
 
 ```
 cmssw/
-  read_hepmc_cfg.py         read a .hepmc file with MCFileSource
+  read_hepmc_cfg.py         read a .hepmc file with MCFileSource, or a
+                            .hepmc3 file with MCFileSource3
   check_hepmc_roundtrip.py  assert CMSSW got back what the generator wrote
   run_read_validation.sh    the above over six generator configurations
 
-  gensim_cfg.py             GEN-SIM: GEANT4 tracking the muons into CMS
+  gensim_cfg.py             GEN-SIM: GEANT4 tracking the muons into CMS,
+                            from either HepMC version
   check_gensim.py           assert GEANT took the right primaries, at the
                             right places, and made hits
   run_gensim.sh             generate, simulate and check, in one command
+
+  run_chain.sh              the whole thing: HepMC 3 -> GEN-SIM -> DIGI-RAW
+                            -> RECO, with the cosmics conditions
+  check_reco.py             assert the cosmic reconstruction made tracks
 
   fragment_mcfilesource.py  the CMSSW fragment for the HepMC route, with the
                             customisation function for a cmsDriver cfg
@@ -83,26 +89,51 @@ mkdir -p /tmp/esg && cd /tmp/esg
 
 .../InterfaceWithExperiments/cmssw/run_read_validation.sh   # format level
 .../InterfaceWithExperiments/cmssw/run_gensim.sh            # GEN-SIM level
+.../InterfaceWithExperiments/cmssw/run_chain.sh             # through RECO
 ```
 
-## Why these cfgs pin HepMC 2
+## The full chain
 
-The generator defaults to HepMC 3. These cfgs pass `--hepmc_version 2` anyway,
-because they are built around `MCFileSource` (`IOMC/Input`), which opens the
-file with `HepMC::IO_GenEvent` -- HepMC **2** -- and produces `HepMCProduct`.
+`run_chain.sh` takes the generator all the way to RECO: generate HepMC 3,
+GEN-SIM with `gensim_cfg.py`, then two stock `cmsDriver` steps for
+`DIGI,L1,DIGI2RAW` and `RAW2DIGI,L1Reco,RECO`. It needs a release with
+`MCFileSource3`; everything after GEN-SIM is release code with no
+EarthShineGen-specific settings at all, because SIM hits are SIM hits.
 
-That is no longer the only option. A local `MCFileSource3` (`HepMC3FileReader`,
-`MCFileSource3`, producing `HepMC3Product` + `GenEventInfoProduct3`) has been
-added to `IOMC/Input` in the work area, and it reads the generator's default
-HepMC 3 output directly -- verified on a 20-event sample.
-`GenParticleProducer` already carries a `HepMC3Product` token, so the read-back
-path could move to HepMC 3 wholesale.
+Two choices in it are worth knowing about, and both follow from the signal
+being cosmic-like rather than collision-like:
 
-What is *not* there yet is GEN-SIM: nothing in `g4SimHits_cfi.py` takes a
-HepMC3 product, so GEANT still needs HepMC 2. Migrating `read_hepmc_cfg.py`
-and `check_hepmc_roundtrip.py` to `MCFileSource3` is a clean follow-up; until
-someone does it, and until `MCFileSource3` is upstream rather than local, these
-cfgs stay on HepMC 2 so that they work in any release.
+* **the cosmics GlobalTag**, `auto:phase1_2024_cosmics`
+  (`140X_mcRun3_2024cosmics_realistic_deco_v14`), which is also the tag the
+  analysis side uses, rather than `auto:phase1_2024_realistic`;
+* **`--scenario cosmics`**, so that RECO runs the cosmic reconstruction --
+  `ctfWithMaterialTracksP5`, `cosmicMuons`, `globalCosmicMuons`. A muon that
+  enters from below has no beam spot, no primary vertex and no pt constraint,
+  so the collision sequences have nothing to work with.
+
+Note that `--scenario cosmics` also affects SIM, and there it currently must
+not be used with HepMC 3; see Known issues.
+
+## HepMC 2 or HepMC 3
+
+The generator defaults to HepMC 3. Both versions now go all the way through.
+
+`MCFileSource` (`IOMC/Input`) opens the file with `HepMC::IO_GenEvent` -- HepMC
+**2** -- and produces `HepMCProduct`. `MCFileSource3`
+([cms-sw/cmssw#51842](https://github.com/cms-sw/cmssw/pull/51842), same
+package) reads HepMC 3 and produces `HepMC3Product` + `GenEventInfoProduct3`.
+Both put their product at `('source', 'generator')`, so `hepmcVersion=2|3` is
+the only difference in the cfgs.
+
+GEANT takes either, which is the part that was previously thought to be
+missing: `RunManagerMTWorker` consumes a `HepMCProduct` *and* a `HepMC3Product`
+from the tag in `Generator.HepMCProductLabel`, and hands whichever it finds to
+`Generator` or `Generator3`. Nothing in `g4SimHits_cfi.py` has to change.
+
+Use HepMC 2 if the release predates #51842; it is the only reason to. Use
+HepMC 3 otherwise -- it is what the generator writes without being asked, and
+it needs no `firstLuminosityBlockForEachRun` incantation, because
+`MCFileSource3` has `fillDescriptions` and `MCFileSource` does not.
 
 ## Three things that are not obvious
 
@@ -158,11 +189,32 @@ ask for the inner cylinder and shorten the surface to where CMS actually ends:
 --require_hit inner_detector --require_both_muons 1 --detector_half_length 11
 ```
 
-With those settings, 20 of 20 events leave hits in the muon system and 18 of 20
-in the tracker.
+With those settings, seed 20260907 gives 20 of 20 events with hits in the muon
+system and 18 of 20 in the tracker; seed 20260909 gives 17 of 20 and 18 of 20.
+Reaching the inner cylinder does not guarantee reaching a muon station, so the
+muon-system rate is a property of the sample -- it comes out identically from
+HepMC 2 and HepMC 3 -- and `check_gensim.py` prints it rather than requiring
+all of them.
 
 ## Known issues
 
 * [`docs/rpc-stepping.md`](docs/rpc-stepping.md) -- a small fraction of muons
   are killed by GEANT's step-count limit in the endcap chambers. Measured rate
   and a plan for making the limit configurable.
+
+* **`NonBeamEvent` silently drops every primary in the HepMC 3 path.**
+  `--scenario cosmics` pulls in `SimNOBEAM_cff`, which sets
+  `g4SimHits.NonBeamEvent = True`. In `RunManagerMTWorker::generateEvent` the
+  HepMC 2 branch then calls `nonCentralEvent2G4`, but in the HepMC 3 branch
+  that call is commented out, so nothing is handed to GEANT and the job dies
+  with
+
+  ```
+  RunManagerMTWorker::produce: event 1 with no G4PrimaryVertices
+  ```
+
+  `Generator3::nonCentralEvent2G4` is implemented; only the call site is
+  missing. Until that is fixed upstream, run SIM without the cosmics scenario
+  -- `gensim_cfg.py` does, and it selects the right primaries by the fiducial
+  cuts instead -- and use `--scenario cosmics` only from DIGI onwards, which is
+  what `run_chain.sh` does.

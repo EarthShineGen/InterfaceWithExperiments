@@ -6,9 +6,14 @@
 EarthShineGen (https://github.com/EarthShineGen/EarthShineGen) writes a dark
 Earthshine signal: a dark photon decays in the rock under the detector and the
 two muons travel up through the overburden and enter the detector from below.
-It writes HepMC 2, which `MCFileSource` reads, and the record has one
-production vertex per muon at the point where that muon crosses the hand-off
-surface -- by default the detector's own outer cylinder.
+The record has one production vertex per muon at the point where that muon
+crosses the hand-off surface -- by default the detector's own outer cylinder.
+
+Either HepMC version works.  `hepmcVersion=2` reads the file with
+`MCFileSource`, `hepmcVersion=3` with `MCFileSource3` (cms-sw/cmssw#51842);
+both put their product at ('source', 'generator') and `g4SimHits` takes either,
+because `RunManagerMTWorker` consumes a `HepMCProduct` *and* a `HepMC3Product`
+from the tag in `Generator.HepMCProductLabel` and uses whichever is there.
 
 Three things about this cfg differ from a standard GEN-SIM and all three are
 forced by that geometry:
@@ -46,6 +51,10 @@ options = VarParsing('analysis')
 options.setDefault('inputFiles', ['file:events.hepmc'])
 options.setDefault('outputFile', 'earthshinegen_gensim.root')
 options.setDefault('maxEvents', 20)
+options.register('hepmcVersion', 3,
+                 VarParsing.multiplicity.singleton, VarParsing.varType.int,
+                 'HepMC version of the input file: 2 is read by MCFileSource, '
+                 '3 by MCFileSource3 (cms-sw/cmssw#51842).')
 options.register('maxSteps', 20000,
                  VarParsing.multiplicity.singleton, VarParsing.varType.int,
                  'GEANT step-count limit per track (SteppingAction.'
@@ -68,20 +77,30 @@ process.load('Configuration.StandardSequences.EndOfProcess_cff')
 process.load('Configuration.StandardSequences.FrontierConditions_GlobalTag_cff')
 
 from Configuration.AlCa.GlobalTag import GlobalTag
+# The cosmics MC conditions, not the collision ones: these muons cross the
+# detector like cosmics do, and this is the tag the analysis side uses
+# (phase1_2024_cosmics = 140X_mcRun3_2024cosmics_realistic_deco_v14).
 process.GlobalTag = GlobalTag(process.GlobalTag,
-                              'auto:phase1_2024_realistic', '')
+                              'auto:phase1_2024_cosmics', '')
 if hasattr(process, "XMLFromDBSource"):
     process.XMLFromDBSource.label = "Extended"
 if hasattr(process, "DDDetectorESProducerFromDB"):
     process.DDDetectorESProducerFromDB.label = "Extended"
 
-process.source = cms.Source(
-    "MCFileSource",
-    fileNames=cms.untracked.vstring(options.inputFiles),
-    # MCFileSource has no fillDescriptions, so this ProducerSourceBase
-    # parameter has to be given by hand; it has no default.
-    firstLuminosityBlockForEachRun=cms.untracked.VLuminosityBlockID(),
-)
+if options.hepmcVersion == 3:
+    process.source = cms.Source(
+        "MCFileSource3",
+        fileNames=cms.untracked.vstring(options.inputFiles),
+    )
+else:
+    process.source = cms.Source(
+        "MCFileSource",
+        fileNames=cms.untracked.vstring(options.inputFiles),
+        # MCFileSource has no fillDescriptions, so this ProducerSourceBase
+        # parameter has to be given by hand; it has no default.  MCFileSource3
+        # does have them, which is why the branch above needs nothing.
+        firstLuminosityBlockForEachRun=cms.untracked.VLuminosityBlockID(),
+    )
 process.maxEvents = cms.untracked.PSet(
     input=cms.untracked.int32(options.maxEvents))
 

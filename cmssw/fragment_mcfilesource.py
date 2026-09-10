@@ -41,15 +41,23 @@ import FWCore.ParameterSet.Config as cms
 # THE SOURCE
 # ---------------------------------------------------------------------------
 # MCFileSource reads HepMC 2 (HepMC::IO_GenEvent ASCII) and produces an
-# edm::HepMCProduct under ('source', 'generator').  It is the only file-based
-# generator input source in CMSSW; there is no HepMC3 file reader, which is why
-# EarthShineGen writes HepMC 2.
+# edm::HepMCProduct under ('source', 'generator').  MCFileSource3
+# (cms-sw/cmssw#51842, same package) reads HepMC 3 -- what the generator writes
+# by default -- and produces an edm::HepMC3Product under the same tag.  Use it
+# in any release that has it; the HepMC 2 source below is for releases that
+# predate the PR.
 
 source = cms.Source(
+    "MCFileSource3",
+    fileNames=cms.untracked.vstring('file:events.hepmc3'),
+)
+
+source_hepmc2 = cms.Source(
     "MCFileSource",
     fileNames=cms.untracked.vstring('file:events.hepmc'),
     # MCFileSource has no fillDescriptions, so this ProducerSourceBase
-    # parameter has to be given by hand; it has no default.
+    # parameter has to be given by hand; it has no default.  MCFileSource3 has
+    # them, which is why the source above needs nothing.
     firstLuminosityBlockForEachRun=cms.untracked.VLuminosityBlockID(),
 )
 
